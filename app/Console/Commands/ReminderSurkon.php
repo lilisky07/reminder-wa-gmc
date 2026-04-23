@@ -17,25 +17,21 @@ class ReminderSurkon extends Command
 
     public function handle()
     {
-        // Ambil surat kontrol hari ini yang belum dikirim notif
         $data = DB::table('bridging_surat_kontrol_bpjs as sk')
             ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
             ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
             ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
-            ->join('poliklinik as pl', 'rp.kd_poli', '=', 'pl.kd_poli')
             ->select(
                 'sk.no_sep',
-                'p.nm_pasien',
-                'p.no_tlp',
+                'sk.nm_poli_bpjs as nm_poli',
+                'sk.nm_dokter_bpjs',
                 'sk.tgl_rencana',
-                'sk.nm_dokter_bpjs as nm_dokter',
-                'rp.kd_dokter',
-                'pl.nm_poli'
+                'p.nm_pasien',
+                'p.no_tlp'
             )
             ->whereDate('sk.tgl_surat', now())
             ->whereNotNull('p.no_tlp')
             ->where('p.no_tlp', '!=', '')
-            // Hanya yang belum ada di wa_surkon_sent
             ->whereNotIn('sk.no_sep', DB::table('wa_surkon_sent')->pluck('no_sep'))
             ->get();
 
@@ -48,13 +44,13 @@ class ReminderSurkon extends Command
             $no = $this->formatNomor($item->no_tlp);
             if (!$no) continue;
 
-            $jam  = $this->ambilJam($item->kd_dokter, $item->tgl_rencana);
+            $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
             $hari = $this->getHariIndo($item->tgl_rencana);
 
             $pesan = "Terima kasih telah memilih RSU GMC 🙏\n\n"
                 . "Berikut rencana kontrol kak {$item->nm_pasien}:\n\n"
                 . "🏥 Poli    : {$item->nm_poli}\n"
-                . "👨‍⚕️ Dokter  : {$item->nm_dokter}\n"
+                . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
                 . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
                 . "⏰ Jam     : {$jam}\n\n"
                 . "Sampai bertemu di RSU GMC dan hati-hati di jalan 👋\n\n"
@@ -69,7 +65,6 @@ class ReminderSurkon extends Command
             ]);
 
             if ($res->successful()) {
-                // Simpan ke wa_surkon_sent biar tidak dikirim lagi
                 DB::table('wa_surkon_sent')->insert([
                     'no_sep'     => $item->no_sep,
                     'no_tlp'     => $no,
@@ -89,17 +84,26 @@ class ReminderSurkon extends Command
         echo "✅ Selesai!\n";
     }
 
-    private function ambilJam($kd_dokter, $tanggal)
+    private function ambilJam($nm_dokter_bpjs, $tanggal)
     {
         $hari = $this->getHariIndo($tanggal);
-        $jadwal = DB::table('jadwal')
-            ->where('kd_dokter', $kd_dokter)
-            ->where('hari_kerja', $hari)
+
+        $jadwal = DB::table('jadwal as j')
+            ->join('dokter as d', function($join) use ($nm_dokter_bpjs) {
+                $join->on('j.kd_dokter', '=', 'd.kd_dokter')
+                     ->where(function($q) use ($nm_dokter_bpjs) {
+                         $q->whereRaw('LOWER(d.nm_dokter) LIKE LOWER(?)', ["%{$nm_dokter_bpjs}%"])
+                           ->orWhereRaw('LOWER(?) LIKE LOWER(CONCAT("%", d.nm_dokter, "%"))', [$nm_dokter_bpjs]);
+                     });
+            })
+            ->where('j.hari_kerja', $hari)
+            ->select('j.jam_mulai', 'j.jam_selesai')
             ->first();
 
         if ($jadwal && $jadwal->jam_mulai && $jadwal->jam_selesai) {
             return $jadwal->jam_mulai . ' - ' . $jadwal->jam_selesai;
         }
+
         return 'Sesuai jadwal dokter';
     }
 
