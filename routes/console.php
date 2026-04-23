@@ -8,8 +8,8 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('reminder:kontrol')->dailyAt('08:00');
+// Cek surat kontrol baru setiap 5 menit → kirim notif WA
+Schedule::command('reminder:surkon')->everyFiveMinutes();
 
-Artisan::command('reminder:test', function () {
-    app(\App\Console\Commands\ReminderTest::class)->handle();
-});
+// Reminder H-3 & H-1 setiap hari jam 16.00
+Schedule::command('reminder:harian')->dailyAt('16:00');
