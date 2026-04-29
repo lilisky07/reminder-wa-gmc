@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\NpsUlasan;
 use App\Models\WaConversationState;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -17,7 +18,6 @@ class WablasWebhookController extends Controller
     const WABLAS_TOKEN    = 'VB8zjsrnjSBJ0ebc9VlnxuRcqM3hUXkGLSW9OeQh466Ht22MDLIm7Rd1UJ6KWNfP';
     const WABLAS_SECRET   = '4vWr3WU7';
 
-    // Ganti nama file sesuai yang ada di folder public kamu
     const JADWAL_IMAGE_URL = 'https://i.ibb.co.com/LDDj1w54/jadwal.jpg';
 
     public function handle(Request $request)
@@ -31,7 +31,19 @@ class WablasWebhookController extends Controller
             return response()->json(['status' => 'ignored'], 200);
         }
 
+        // Kalau pesan format list message Wablas: "Judul <~ Pilihan#Deskripsi"
+        // Ekstrak bagian setelah '<~' dan sebelum '#'
+        if (str_contains($message, '<~')) {
+            preg_match('/<~\s*(.+?)(?:#|$)/', $message, $extracted);
+            if (!empty($extracted[1])) {
+                $message = trim($extracted[1]);
+                Log::info('[Wablas Webhook] Extracted list reply: ' . $message);
+            }
+        }
+
         $state = WaConversationState::aktif($phone);
+
+        Log::info('[Webhook Debug] phone: ' . $phone . ' | message: ' . $message . ' | state: ' . ($state ? $state->state : 'NULL'));
 
         if (!$state) {
             return response()->json(['status' => 'no_active_session'], 200);
@@ -40,6 +52,8 @@ class WablasWebhookController extends Controller
         match ($state->state) {
             'awaiting_reschedule_confirmation' => $this->handleKonfirmasi($state, $message),
             'awaiting_new_date'                => $this->handleTanggalBaru($state, $message),
+            'awaiting_nps_score'               => $this->handleNpsSkor($state, $message),
+            'awaiting_nps_comment'             => $this->handleNpsKomentar($state, $message),
             default                            => null,
         };
 
@@ -49,22 +63,20 @@ class WablasWebhookController extends Controller
     private function handleKonfirmasi(WaConversationState $state, string $message): void
     {
         Log::info('[handleKonfirmasi] message: ' . $message);
-    
-    $msg = mb_strtolower($message);
-    
-    Log::info('[handleKonfirmasi] msg lowercase: ' . $msg);
-    Log::info('[handleKonfirmasi] contains ubah: ' . (str_contains($msg, 'ubah') ? 'YES' : 'NO'));
+
+        $msg = mb_strtolower($message);
+
+        Log::info('[handleKonfirmasi] msg lowercase: ' . $msg);
+        Log::info('[handleKonfirmasi] contains ubah: ' . (str_contains($msg, 'ubah') ? 'YES' : 'NO'));
 
         if (str_contains($msg, 'ubah')) {
 
-            // Kirim gambar jadwal dokter
             $this->kirimGambar(
                 $state->phone,
                 self::JADWAL_IMAGE_URL,
                 'Berikut jadwal lengkap dokter 📅'
             );
 
-            // Kirim instruksi
             $this->kirimWa(
                 $state->phone,
                 "Silakan balas dengan tanggal rencana kontrol yang baru ya kak 🙏\n\nContoh: *Kamis, 01/12/2026*"
@@ -121,6 +133,60 @@ class WablasWebhookController extends Controller
         $state->delete();
     }
 
+    private function handleNpsSkor(WaConversationState $state, string $message): void
+    {
+        preg_match('/\b(\d{1,2})\b/', $message, $m);
+        $skor = isset($m[1]) ? (int) $m[1] : -1;
+
+        if ($skor < 0 || $skor > 10) {
+            $this->kirimWa(
+                $state->phone,
+                "Maaf kak, mohon pilih angka *0 sampai 10* melalui menu yang tersedia ya 🙏"
+            );
+            return;
+        }
+
+        $nps = NpsUlasan::find((int) $state->kd_dokter);
+
+        if ($nps) {
+            $nps->update([
+                'skor'    => $skor,
+                'skor_at' => now(),
+                'segmen'  => NpsUlasan::hitungSegmen($skor),
+            ]);
+        }
+
+        $pertanyaan = $skor <= 8
+            ? "Terima kasih atas penilaiannya kak 🙏\n\nApa hal yang bisa kami perbaiki agar layanan kami lebih menyenangkan bagi kakak?"
+            : "Terima kasih banyak, kak! 🌟 Kami senang bisa melayani kakak.\n\nApa hal yang membuat kakak merasa nyaman sehingga akan merekomendasikan kami ke orang lain?";
+
+        $this->kirimWa($state->phone, $pertanyaan);
+
+        $state->update([
+            'state'      => 'awaiting_nps_comment',
+            'expires_at' => now()->addHours(24),
+        ]);
+    }
+
+    private function handleNpsKomentar(WaConversationState $state, string $message): void
+    {
+        $nps = NpsUlasan::find((int) $state->kd_dokter);
+
+        if ($nps) {
+            $nps->update([
+                'komentar'    => $message,
+                'komentar_at' => now(),
+            ]);
+        }
+
+        $this->kirimWa(
+            $state->phone,
+            "Masukan kakak sudah kami catat 📝 Terima kasih sudah membantu kami menjadi lebih baik 🙏\n\nSemoga kakak dan keluarga selalu sehat ya kak 😊"
+        );
+
+        $state->delete();
+    }
+
     private function kirimWa(string $phone, string $pesan): void
     {
         try {
@@ -137,23 +203,23 @@ class WablasWebhookController extends Controller
     }
 
     private function kirimGambar(string $phone, string $imageUrl, string $caption = ''): void
-{
-    try {
-        Log::info('[kirimGambar] Mencoba kirim ke ' . $phone . ' | URL: ' . $imageUrl);
-        
-        $res = Http::withHeaders([
-            'Authorization' => self::WABLAS_TOKEN,
-            'secret-key'    => self::WABLAS_SECRET,
-        ])->post(self::WABLAS_IMG_URL, [
-            'phone'   => $phone,
-            'image'   => $imageUrl,
-            'caption' => $caption,
-        ]);
+    {
+        try {
+            Log::info('[kirimGambar] Mencoba kirim ke ' . $phone . ' | URL: ' . $imageUrl);
 
-        Log::info('[kirimGambar] Response: ' . $res->status() . ' | ' . $res->body());
+            $res = Http::withHeaders([
+                'Authorization' => self::WABLAS_TOKEN,
+                'secret-key'    => self::WABLAS_SECRET,
+            ])->post(self::WABLAS_IMG_URL, [
+                'phone'   => $phone,
+                'image'   => $imageUrl,
+                'caption' => $caption,
+            ]);
 
-    } catch (\Exception $e) {
-        Log::error('[Wablas] Gagal kirim gambar ke ' . $phone . ': ' . $e->getMessage());
+            Log::info('[kirimGambar] Response: ' . $res->status() . ' | ' . $res->body());
+
+        } catch (\Exception $e) {
+            Log::error('[Wablas] Gagal kirim gambar ke ' . $phone . ': ' . $e->getMessage());
+        }
     }
-}
 }
