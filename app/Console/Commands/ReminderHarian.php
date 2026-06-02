@@ -22,61 +22,75 @@ class ReminderHarian extends Command
         // =========================
         // 1. REMINDER H-3
         // =========================
-        $dataH3 = DB::table('bridging_surat_kontrol_bpjs as sk')
-            ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
-            ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
-            ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
-            ->select(
-                'sk.nm_poli_bpjs as nm_poli',
-                'sk.nm_dokter_bpjs',
-                'sk.tgl_rencana',
-                'p.nm_pasien',
-                'p.no_tlp'
-            )
-            ->whereDate('sk.tgl_rencana', now()->addDays(3))
-            ->whereDate('sk.tgl_surat', '>=', now()->subDays(30))
-            ->whereNotNull('p.no_tlp')
-            ->where('p.no_tlp', '!=', '')
-            ->get();
+        // $dataH3 = DB::table('bridging_surat_kontrol_bpjs as sk')
+        //     ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
+        //     ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
+        //     ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
+        //     ->select(
+        //         'sk.no_sep',
+        //         'sk.nm_poli_bpjs as nm_poli',
+        //         'sk.nm_dokter_bpjs',
+        //         'sk.tgl_rencana',
+        //         'p.nm_pasien',
+        //         'p.no_tlp'
+        //     )
+        //     ->whereDate('sk.tgl_rencana', now()->addDays(3))
+        //     ->whereDate('sk.tgl_surat', '>=', now()->subDays(30))
+        //     ->whereNotNull('p.no_tlp')
+        //     ->where('p.no_tlp', '!=', '')
+        //     ->get();
 
-        foreach ($dataH3 as $item) {
-            $no = $this->formatNomor($item->no_tlp);
-            if (!$no) continue;
+        // foreach ($dataH3 as $item) {
+        //     $no = $this->formatNomor($item->no_tlp);
+        //     if (!$no) continue;
 
-            $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
-            $hari = $this->getHariIndo($item->tgl_rencana);
+        //     if (DB::table('wa_surkon_sent')->where('no_sep', $item->no_sep)->exists()) {
+        //         echo "⏭ Skip (sudah kirim): {$item->nm_pasien}\n";
+        //         continue;
+        //     }
 
-            $this->kirimListMessage($no, [
-                'title'       => '🔔 Pengingat H-3',
-                'description' => "Halo kak {$item->nm_pasien}, kembali mengingatkan jadwal kontrol kakak:\n\n"
-                    . "🏥 Poli    : {$item->nm_poli}\n"
-                    . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
-                    . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
-                    . "⏰ Jam     : {$jam}\n\n"
-                    . "Apakah kakak ingin melakukan perubahan jadwal?",
-                'buttonText'  => 'Pilih',
-                'lists'       => [
-                    ['title' => 'Ubah jadwal', 'description' => 'Saya ingin mengubah jadwal kontrol'],
-                    ['title' => 'Tetap',       'description' => 'Saya tetap dengan jadwal yang ada'],
-                ],
-                'footer' => 'RSU GMC',
-            ], $item->nm_pasien);
+        //     $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
+        //     $hari = $this->getHariIndo($item->tgl_rencana);
 
-            WaConversationState::updateOrCreate(
-                ['phone' => $no],
-                [
-                    'state'       => 'awaiting_reschedule_confirmation',
-                    'nm_pasien'   => $item->nm_pasien,
-                    'nm_poli'     => $item->nm_poli,
-                    'nm_dokter'   => $item->nm_dokter_bpjs,
-                    'tgl_rencana' => $item->tgl_rencana,
-                    'kd_dokter'   => '',
-                    'expires_at'  => now()->addHours(48),
-                ]
-            );
+        //     $this->kirimListMessage($no, [
+        //         'title'       => '🔔 Pengingat H-3',
+        //         'description' => "Halo kak {$item->nm_pasien}, kembali mengingatkan jadwal kontrol kakak:\n\n"
+        //             . "🏥 Poli    : {$item->nm_poli}\n"
+        //             . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
+        //             . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
+        //             . "⏰ Jam     : {$jam}\n\n"
+        //             . "Apakah kakak ingin melakukan perubahan jadwal?",
+        //         'buttonText'  => 'Pilih',
+        //         'lists'       => [
+        //             ['title' => 'Ubah jadwal', 'description' => 'Saya ingin mengubah jadwal kontrol'],
+        //             ['title' => 'Tetap',       'description' => 'Saya tetap dengan jadwal yang ada'],
+        //         ],
+        //         'footer' => 'RSU GMC',
+        //     ], $item->nm_pasien);
 
-            sleep(2);
-        }
+        //     DB::table('wa_surkon_sent')->insert([
+        //         'no_sep'     => $item->no_sep,
+        //         'no_tlp'     => $no,
+        //         'nm_pasien'  => $item->nm_pasien,
+        //         'created_at' => now(),
+        //         'updated_at' => now(),
+        //     ]);
+
+        //     WaConversationState::updateOrCreate(
+        //         ['phone' => $no],
+        //         [
+        //             'state'       => 'awaiting_reschedule_confirmation',
+        //             'nm_pasien'   => $item->nm_pasien,
+        //             'nm_poli'     => $item->nm_poli,
+        //             'nm_dokter'   => $item->nm_dokter_bpjs,
+        //             'tgl_rencana' => $item->tgl_rencana,
+        //             'kd_dokter'   => '',
+        //             'expires_at'  => now()->addHours(48),
+        //         ]
+        //     );
+
+        //     sleep(2);
+        // }
 
         // =========================
         // 2. REMINDER H-1
@@ -86,6 +100,7 @@ class ReminderHarian extends Command
             ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
             ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
             ->select(
+                'sk.no_sep',
                 'sk.nm_poli_bpjs as nm_poli',
                 'sk.nm_dokter_bpjs',
                 'sk.tgl_rencana',
@@ -101,6 +116,11 @@ class ReminderHarian extends Command
         foreach ($dataH1 as $item) {
             $no = $this->formatNomor($item->no_tlp);
             if (!$no) continue;
+
+            if (DB::table('wa_surkon_sent')->where('no_sep', $item->no_sep)->exists()) {
+                echo "⏭ Skip (sudah kirim): {$item->nm_pasien}\n";
+                continue;
+            }
 
             $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
             $hari = $this->getHariIndo($item->tgl_rencana);
@@ -120,6 +140,14 @@ class ReminderHarian extends Command
                 ],
                 'footer' => 'RSU GMC',
             ], $item->nm_pasien);
+
+            DB::table('wa_surkon_sent')->insert([
+                'no_sep'     => $item->no_sep,
+                'no_tlp'     => $no,
+                'nm_pasien'  => $item->nm_pasien,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
             WaConversationState::updateOrCreate(
                 ['phone' => $no],
@@ -166,17 +194,17 @@ class ReminderHarian extends Command
         $jadwal = DB::table('jadwal as j')
             ->join('dokter as d', function($join) use ($nm_dokter_bpjs) {
                 $join->on('j.kd_dokter', '=', 'd.kd_dokter')
-                     ->where(function($q) use ($nm_dokter_bpjs) {
-                         $q->whereRaw('LOWER(d.nm_dokter) LIKE LOWER(?)', ["%{$nm_dokter_bpjs}%"])
-                           ->orWhereRaw('LOWER(?) LIKE LOWER(CONCAT("%", d.nm_dokter, "%"))', [$nm_dokter_bpjs]);
-                     });
+                     ->whereRaw(
+                         'REPLACE(LOWER(d.nm_dokter), " ", "") LIKE CONCAT("%", REPLACE(LOWER(?), " ", ""), "%")',
+                         [$nm_dokter_bpjs]
+                     );
             })
             ->where('j.hari_kerja', $hari)
-            ->select('j.jam_mulai', 'j.jam_selesai')
+            ->select('j.jam_mulai')
             ->first();
 
-        if ($jadwal && $jadwal->jam_mulai && $jadwal->jam_selesai) {
-            return $jadwal->jam_mulai . ' - ' . $jadwal->jam_selesai;
+        if ($jadwal && $jadwal->jam_mulai) {
+            return $jadwal->jam_mulai . ' - selesai';
         }
 
         return 'Sesuai jadwal dokter';

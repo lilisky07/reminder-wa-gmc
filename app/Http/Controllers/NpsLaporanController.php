@@ -11,32 +11,41 @@ class NpsLaporanController extends Controller
     /**
      * GET /api/nps/laporan?dari=YYYY-MM-DD&sampai=YYYY-MM-DD
      * Dipanggil Google Apps Script untuk ekspor ke Google Sheets.
+     * Default: hanya hari ini (bukan 30 hari terakhir)
      */
     public function index(Request $request): JsonResponse
     {
-        $dari   = $request->input('dari',   now()->subDays(30)->toDateString());
+        $dari   = $request->input('dari',   now()->toDateString());
         $sampai = $request->input('sampai', now()->toDateString());
 
-        $base = fn() => NpsUlasan::whereBetween('kirim_at', [
-            $dari   . ' 00:00:00',
+        // Total pesan terkirim dalam periode
+        $totalKirim = NpsUlasan::whereBetween('kirim_at', [
+            $dari . ' 00:00:00',
             $sampai . ' 23:59:59',
-        ]);
+        ])->count();
 
-        $data = $base()
-            ->whereNotNull('skor')
-            ->orderByDesc('skor_at')
-            ->get([
-                'nm_pasien', 'nm_poli', 'jenis_rawat',
-                'skor', 'segmen', 'komentar',
-                'skor_at', 'komentar_at', 'sudah_direspons_cs',
-            ]);
+        // Ambil semua data skor sekaligus — 1 query, tidak berulang
+        $skorData = NpsUlasan::whereBetween('skor_at', [
+            $dari . ' 00:00:00',
+            $sampai . ' 23:59:59',
+        ])
+        ->whereNotNull('skor')
+        ->get([
+            'nm_pasien', 'nm_poli', 'jenis_rawat',
+            'skor', 'segmen', 'komentar',
+            'skor_at', 'komentar_at', 'sudah_direspons_cs',
+        ])
+        ->sortByDesc('skor_at')
+        ->values();
 
-        $totalKirim   = $base()->count();
-        $totalRespons = $base()->whereNotNull('skor')->count();
-        $detractors   = $base()->where('segmen', 'detractor')->count();
-        $passives     = $base()->where('segmen', 'passive')->count();
-        $promoters    = $base()->where('segmen', 'promoter')->count();
-        $rataRata     = $totalRespons > 0 ? round($base()->whereNotNull('skor')->avg('skor'), 1) : null;
+        // Hitung statistik dari collection (tidak perlu query ulang ke DB)
+        $totalRespons = $skorData->count();
+        $detractors   = $skorData->where('segmen', 'detractor')->count();
+        $passives     = $skorData->where('segmen', 'passive')->count();
+        $promoters    = $skorData->where('segmen', 'promoter')->count();
+        $rataRata     = $totalRespons > 0
+            ? round($skorData->avg('skor'), 1)
+            : null;
         $npsScore     = $totalRespons > 0
             ? round((($promoters - $detractors) / $totalRespons) * 100)
             : null;
@@ -54,7 +63,7 @@ class NpsLaporanController extends Controller
                 'passives'       => $passives,
                 'promoters'      => $promoters,
             ],
-            'data' => $data,
+            'data' => $skorData,
         ]);
     }
 }

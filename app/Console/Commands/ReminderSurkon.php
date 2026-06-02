@@ -91,17 +91,17 @@ class ReminderSurkon extends Command
         $jadwal = DB::table('jadwal as j')
             ->join('dokter as d', function($join) use ($nm_dokter_bpjs) {
                 $join->on('j.kd_dokter', '=', 'd.kd_dokter')
-                     ->where(function($q) use ($nm_dokter_bpjs) {
-                         $q->whereRaw('LOWER(d.nm_dokter) LIKE LOWER(?)', ["%{$nm_dokter_bpjs}%"])
-                           ->orWhereRaw('LOWER(?) LIKE LOWER(CONCAT("%", d.nm_dokter, "%"))', [$nm_dokter_bpjs]);
-                     });
+                     ->whereRaw(
+                         'REPLACE(LOWER(d.nm_dokter), " ", "") LIKE CONCAT("%", REPLACE(LOWER(?), " ", ""), "%")',
+                         [$nm_dokter_bpjs]
+                     );
             })
             ->where('j.hari_kerja', $hari)
-            ->select('j.jam_mulai', 'j.jam_selesai')
+            ->select('j.jam_mulai')
             ->first();
 
-        if ($jadwal && $jadwal->jam_mulai && $jadwal->jam_selesai) {
-            return $jadwal->jam_mulai . ' - ' . $jadwal->jam_selesai;
+        if ($jadwal && $jadwal->jam_mulai) {
+            return $jadwal->jam_mulai . ' - selesai';
         }
 
         return 'Sesuai jadwal dokter';

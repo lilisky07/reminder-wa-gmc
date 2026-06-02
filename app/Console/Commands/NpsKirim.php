@@ -43,7 +43,11 @@ class NpsKirim extends Command
             $query->where('rp.no_rawat', $filterNoRawat);
             $this->info("🧪 Mode testing — filter ke no_rawat: {$filterNoRawat}");
         } else {
-            $query->where('rp.tgl_registrasi', '>=', now()->subDays(7));
+            // Ambil kemarin + hari ini yang sudah Sudah Bayar
+            // Kenapa 2 hari? Pasien bisa daftar kemarin tapi baru close billing hari ini
+            // Aman dari double kirim karena ada pengecekan sudahDikirim() di bawah
+            $query->where('rp.tgl_registrasi', '>=', now()->subDays(1)->toDateString());
+            $this->info("📅 Mode normal — cek billing close: " . now()->subDays(1)->toDateString() . " s/d " . now()->toDateString());
         }
 
         $pasiens = $query->get();
