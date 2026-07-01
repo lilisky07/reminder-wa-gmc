@@ -20,7 +20,7 @@ class ReminderHarian extends Command
     public function handle()
     {
         // =========================
-        // REMINDER H-1 — ambil 1 pasien yang belum dikirim
+        // ambil pasien yang perlu dikirim reminder h-1 
         // =========================
         $item = DB::table('bridging_surat_kontrol_bpjs as sk')
             ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
