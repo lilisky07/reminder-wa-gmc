@@ -1,0 +1,3 @@
+reminderwhatsapp.duckdns.org {
+    reverse_proxy app:80
+}

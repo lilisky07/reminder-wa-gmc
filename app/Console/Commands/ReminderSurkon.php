@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Http;
 
 class ReminderSurkon extends Command
 {
-    protected $signature   = 'reminder:surkon';
+    protected $signature   = 'reminder:surkon
+                                {--satu : Kirim hanya ke 1 pasien berikutnya yang belum dikirim}';
     protected $description = 'Kirim notif WA saat surat kontrol BPJS dibuat (cek tiap 5 menit)';
 
     const WABLAS_TOKEN = 'VB8zjsrnjSBJ0ebc9VlnxuRcqM3hUXkGLSW9OeQh466Ht22MDLIm7Rd1UJ6KWNfP';
@@ -17,6 +18,8 @@ class ReminderSurkon extends Command
 
     public function handle()
     {
+        $hanyaSatu = $this->option('satu');
+
         $data = DB::table('bridging_surat_kontrol_bpjs as sk')
             ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
             ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
@@ -38,6 +41,10 @@ class ReminderSurkon extends Command
         if ($data->isEmpty()) {
             echo "Tidak ada surat kontrol baru.\n";
             return;
+        }
+
+        if ($hanyaSatu) {
+            $this->info("1️⃣  Mode --satu aktif — akan berhenti setelah 1 berhasil terkirim.");
         }
 
         foreach ($data as $item) {
@@ -73,6 +80,11 @@ class ReminderSurkon extends Command
                     'updated_at' => now(),
                 ]);
                 echo "✔ Terkirim ke: $no - {$item->nm_pasien}\n";
+
+                if ($hanyaSatu) {
+                    $this->info("🛑 Mode --satu aktif, berhenti setelah 1 kiriman.");
+                    break;
+                }
             } else {
                 echo "❌ Gagal ke: $no\n";
                 echo $res->body() . "\n";

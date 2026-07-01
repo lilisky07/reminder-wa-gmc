@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class NpsKirim extends Command
 {
-    protected $signature   = 'nps:kirim {--no-rawat= : Filter ke 1 no_rawat tertentu (untuk testing)}';
+    protected $signature   = 'nps:kirim
+                                {--no-rawat= : Filter ke 1 no_rawat tertentu (untuk testing)}
+                                {--satu : Kirim hanya ke 1 pasien berikutnya yang belum dikirim}';
     protected $description = 'Kirim WA NPS ke pasien yang billing sudah closing (hanya sekali per kunjungan)';
 
     const WABLAS_TOKEN    = 'VB8zjsrnjSBJ0ebc9VlnxuRcqM3hUXkGLSW9OeQh466Ht22MDLIm7Rd1UJ6KWNfP';
@@ -21,6 +23,7 @@ class NpsKirim extends Command
     public function handle(): void
     {
         $filterNoRawat = $this->option('no-rawat');
+        $hanyaSatu     = $this->option('satu');
 
         $query = DB::table('reg_periksa as rp')
             ->leftJoin('bridging_sep as bs', 'rp.no_rawat', '=', 'bs.no_rawat')
@@ -48,6 +51,10 @@ class NpsKirim extends Command
             // Aman dari double kirim karena ada pengecekan sudahDikirim() di bawah
             $query->where('rp.tgl_registrasi', '>=', now()->subDays(1)->toDateString());
             $this->info("📅 Mode normal — cek billing close: " . now()->subDays(1)->toDateString() . " s/d " . now()->toDateString());
+        }
+
+        if ($hanyaSatu) {
+            $this->info("1️⃣  Mode --satu aktif — akan berhenti setelah 1 berhasil terkirim.");
         }
 
         $pasiens = $query->get();
@@ -103,6 +110,11 @@ class NpsKirim extends Command
                 );
                 $terkirim++;
                 $this->info("✓ Terkirim → {$pasien->nm_pasien} ({$no})");
+
+                if ($hanyaSatu) {
+                    $this->info("🛑 Mode --satu aktif, berhenti setelah 1 kiriman.");
+                    break;
+                }
             } else {
                 $nps->delete();
                 $dilewati++;

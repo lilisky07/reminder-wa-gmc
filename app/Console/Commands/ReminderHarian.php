@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Http;
 class ReminderHarian extends Command
 {
     protected $signature   = 'reminder:harian';
-    protected $description = 'Kirim reminder H-3 dan H-1 kontrol pasien (jalan jam 16.00)';
+    protected $description = 'Kirim reminder H-1 kontrol pasien (1 pasien per running)';
 
     const WABLAS_TOKEN    = 'VB8zjsrnjSBJ0ebc9VlnxuRcqM3hUXkGLSW9OeQh466Ht22MDLIm7Rd1UJ6KWNfP';
     const WABLAS_SECRET   = '4vWr3WU7';
@@ -20,82 +20,9 @@ class ReminderHarian extends Command
     public function handle()
     {
         // =========================
-        // 1. REMINDER H-3
+        // REMINDER H-1 — ambil 1 pasien yang belum dikirim
         // =========================
-        // $dataH3 = DB::table('bridging_surat_kontrol_bpjs as sk')
-        //     ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
-        //     ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
-        //     ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
-        //     ->select(
-        //         'sk.no_sep',
-        //         'sk.nm_poli_bpjs as nm_poli',
-        //         'sk.nm_dokter_bpjs',
-        //         'sk.tgl_rencana',
-        //         'p.nm_pasien',
-        //         'p.no_tlp'
-        //     )
-        //     ->whereDate('sk.tgl_rencana', now()->addDays(3))
-        //     ->whereDate('sk.tgl_surat', '>=', now()->subDays(30))
-        //     ->whereNotNull('p.no_tlp')
-        //     ->where('p.no_tlp', '!=', '')
-        //     ->get();
-
-        // foreach ($dataH3 as $item) {
-        //     $no = $this->formatNomor($item->no_tlp);
-        //     if (!$no) continue;
-
-        //     if (DB::table('wa_surkon_sent')->where('no_sep', $item->no_sep)->exists()) {
-        //         echo "⏭ Skip (sudah kirim): {$item->nm_pasien}\n";
-        //         continue;
-        //     }
-
-        //     $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
-        //     $hari = $this->getHariIndo($item->tgl_rencana);
-
-        //     $this->kirimListMessage($no, [
-        //         'title'       => '🔔 Pengingat H-3',
-        //         'description' => "Halo kak {$item->nm_pasien}, kembali mengingatkan jadwal kontrol kakak:\n\n"
-        //             . "🏥 Poli    : {$item->nm_poli}\n"
-        //             . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
-        //             . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
-        //             . "⏰ Jam     : {$jam}\n\n"
-        //             . "Apakah kakak ingin melakukan perubahan jadwal?",
-        //         'buttonText'  => 'Pilih',
-        //         'lists'       => [
-        //             ['title' => 'Ubah jadwal', 'description' => 'Saya ingin mengubah jadwal kontrol'],
-        //             ['title' => 'Tetap',       'description' => 'Saya tetap dengan jadwal yang ada'],
-        //         ],
-        //         'footer' => 'RSU GMC',
-        //     ], $item->nm_pasien);
-
-        //     DB::table('wa_surkon_sent')->insert([
-        //         'no_sep'     => $item->no_sep,
-        //         'no_tlp'     => $no,
-        //         'nm_pasien'  => $item->nm_pasien,
-        //         'created_at' => now(),
-        //         'updated_at' => now(),
-        //     ]);
-
-        //     WaConversationState::updateOrCreate(
-        //         ['phone' => $no],
-        //         [
-        //             'state'       => 'awaiting_reschedule_confirmation',
-        //             'nm_pasien'   => $item->nm_pasien,
-        //             'nm_poli'     => $item->nm_poli,
-        //             'nm_dokter'   => $item->nm_dokter_bpjs,
-        //             'tgl_rencana' => $item->tgl_rencana,
-        //             'kd_dokter'   => '',
-        //             'expires_at'  => now()->addHours(48),
-        //         ]
-        //     );
-
-        //     sleep(2);
-        // }
-
-        // =========================
-        // 2. REMINDER H-1
-        // =========================
-        $dataH1 = DB::table('bridging_surat_kontrol_bpjs as sk')
+        $item = DB::table('bridging_surat_kontrol_bpjs as sk')
             ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
             ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
             ->join('pasien as p', 'rp.no_rkm_medis', '=', 'p.no_rkm_medis')
@@ -111,61 +38,72 @@ class ReminderHarian extends Command
             ->whereDate('sk.tgl_surat', '>=', now()->subDays(30))
             ->whereNotNull('p.no_tlp')
             ->where('p.no_tlp', '!=', '')
-            ->get();
+            ->whereNotIn('sk.no_sep', function ($q) {
+                $q->select('no_sep')->from('wa_surkon_sent');
+            })
+            ->orderBy('sk.tgl_rencana')
+            ->first();
 
-        foreach ($dataH1 as $item) {
-            $no = $this->formatNomor($item->no_tlp);
-            if (!$no) continue;
+        if (!$item) {
+            echo "ℹ️ Tidak ada pasien yang perlu dikirim reminder hari ini.\n";
+            return;
+        }
 
-            if (DB::table('wa_surkon_sent')->where('no_sep', $item->no_sep)->exists()) {
-                echo "⏭ Skip (sudah kirim): {$item->nm_pasien}\n";
-                continue;
-            }
-
-            $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
-            $hari = $this->getHariIndo($item->tgl_rencana);
-
-            $this->kirimListMessage($no, [
-                'title'       => '🔔 Pengingat H-1',
-                'description' => "Halo kak {$item->nm_pasien}, besok hari {$hari} jadwal kontrol kakak:\n\n"
-                    . "🏥 Poli    : {$item->nm_poli}\n"
-                    . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
-                    . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
-                    . "⏰ Jam     : {$jam}\n\n"
-                    . "Apakah kakak ingin melakukan perubahan jadwal?",
-                'buttonText'  => 'Pilih',
-                'lists'       => [
-                    ['title' => 'Ubah jadwal', 'description' => 'Saya ingin mengubah jadwal kontrol'],
-                    ['title' => 'Tetap',       'description' => 'Saya tetap dengan jadwal yang ada'],
-                ],
-                'footer' => 'RSU GMC',
-            ], $item->nm_pasien);
-
+        $no = $this->formatNomor($item->no_tlp);
+        if (!$no) {
+            echo "⚠️ Nomor tidak valid untuk pasien: {$item->nm_pasien}, dilewati.\n";
+            // Tandai sudah "diproses" supaya tidak terus dicoba ulang tiap run
             DB::table('wa_surkon_sent')->insert([
                 'no_sep'     => $item->no_sep,
-                'no_tlp'     => $no,
+                'no_tlp'     => $item->no_tlp,
                 'nm_pasien'  => $item->nm_pasien,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-
-            WaConversationState::updateOrCreate(
-                ['phone' => $no],
-                [
-                    'state'       => 'awaiting_reschedule_confirmation',
-                    'nm_pasien'   => $item->nm_pasien,
-                    'nm_poli'     => $item->nm_poli,
-                    'nm_dokter'   => $item->nm_dokter_bpjs,
-                    'tgl_rencana' => $item->tgl_rencana,
-                    'kd_dokter'   => '',
-                    'expires_at'  => now()->addHours(48),
-                ]
-            );
-
-            sleep(2);
+            return;
         }
 
-        echo "✅ Selesai!\n";
+        $jam  = $this->ambilJam($item->nm_dokter_bpjs, $item->tgl_rencana);
+        $hari = $this->getHariIndo($item->tgl_rencana);
+
+        $this->kirimListMessage($no, [
+            'title'       => '🔔 Pengingat H-1',
+            'description' => "Halo kak {$item->nm_pasien}, besok hari {$hari} jadwal kontrol kakak:\n\n"
+                . "🏥 Poli    : {$item->nm_poli}\n"
+                . "👨‍⚕️ Dokter  : {$item->nm_dokter_bpjs}\n"
+                . "📅 Tanggal : {$hari}, {$item->tgl_rencana}\n"
+                . "⏰ Jam     : {$jam}\n\n"
+                . "Apakah kakak ingin melakukan perubahan jadwal?",
+            'buttonText'  => 'Pilih',
+            'lists'       => [
+                ['title' => 'Ubah jadwal', 'description' => 'Saya ingin mengubah jadwal kontrol'],
+                ['title' => 'Tetap',       'description' => 'Saya tetap dengan jadwal yang ada'],
+            ],
+            'footer' => 'RSU GMC',
+        ], $item->nm_pasien);
+
+        DB::table('wa_surkon_sent')->insert([
+            'no_sep'     => $item->no_sep,
+            'no_tlp'     => $no,
+            'nm_pasien'  => $item->nm_pasien,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        WaConversationState::updateOrCreate(
+            ['phone' => $no],
+            [
+                'state'       => 'awaiting_reschedule_confirmation',
+                'nm_pasien'   => $item->nm_pasien,
+                'nm_poli'     => $item->nm_poli,
+                'nm_dokter'   => $item->nm_dokter_bpjs,
+                'tgl_rencana' => $item->tgl_rencana,
+                'kd_dokter'   => '',
+                'expires_at'  => now()->addHours(48),
+            ]
+        );
+
+        echo "✅ Selesai! 1 reminder terkirim ke: {$item->nm_pasien}\n";
     }
 
     private function kirimListMessage($no, array $message, $nama)

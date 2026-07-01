@@ -55,6 +55,7 @@ class ReminderKontrol extends Command
         // =========================
         // 2. REMINDER H-3 (pakai List Message / button)
         // =========================
+
         $dataH3 = DB::table('bridging_surat_kontrol_bpjs as sk')
             ->join('bridging_sep as bs', 'sk.no_sep', '=', 'bs.no_sep')
             ->join('reg_periksa as rp', 'bs.no_rawat', '=', 'rp.no_rawat')
@@ -160,7 +161,7 @@ class ReminderKontrol extends Command
     }
 
     // =========================
-    // KIRIM LIST MESSAGE (button pilihan)
+    // KIRIM LIST MESSAGE (button pilihan) lama banget ini mau bayar doang aja lama banget kenapa sih 
     // =========================
     private function kirimListMessage($no, array $message, $nama)
     {
